@@ -15,6 +15,7 @@ from src.processing.calculadora_risco import calcular_vulnerabilidade
 df_chuva = coletar_dados_chuva()
 
 df_final = calcular_vulnerabilidade(df_chuva)
+print(df_final) 
 
 app = dash.Dash(__name__)
 server = app.server

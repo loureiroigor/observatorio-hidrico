@@ -1,68 +1,41 @@
 import requests
-from bs4 import BeautifulSoup
 import pandas as pd
 
 def coletar_dados_chuva():
     """
-    coleta dados de chuva simulando o acesso a uma página de dados meteorológicos só pra ver se tá dando o cheiro.
-    
-    essa função simula a extraçao de uma tabela com 'Data' e 'Precipitacao_mm',
-    e retorna os dados formatados em um DataFrame do Pandas.
-    bizarro.
+    consome dados reais da API Open-Meteo para Campo Grande/MS.
+    mantém o Fallback de segurança caso a internet falhe.
     """
-    url = 'https://exemplo-clima.gov.br'
+    # coordenadas de nosso campo grande - MS
+    url = "https://api.open-meteo.com/v1/forecast?latitude=-20.4428&longitude=-54.6464&daily=precipitation_sum&timezone=America%2FSao_Paulo&past_days=5&forecast_days=1"
     
-    # Mock do conteúdo HTML da página
-    html_content = """
-    <html>
-    <body>
-        <h2>Dados de Precipitação</h2>
-        <table border="1">
-            <thead>
-                <tr>
-                    <th>Data</th>
-                    <th>Precipitação (mm)</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>2024-01-01</td>
-                    <td>10.5</td>
-                </tr>
-                <tr>
-                    <td>2024-01-02</td>
-                    <td>5.2</td>
-                </tr>
-                <tr>
-                    <td>2024-01-03</td>
-                    <td>8.0</td>
-                </tr>
-                <tr>
-                    <td>2024-01-04</td>
-                    <td>15.7</td>
-                </tr>
-            </tbody>
-        </table>
-    </body>
-    </html>
-    """
-    
-    # analisa o HTML com BeautifulSoup
-    soup = BeautifulSoup(html_content, 'html.parser')
-    
-    # encontrando tabela e extraindo os dados
-    table = soup.find('table')
-    dados = []
-    for row in table.find('tbody').find_all('tr'):
-        cols = row.find_all('td')
-        data = cols[0].text.strip()
-        precipitacao = float(cols[1].text.strip())
-        dados.append({'Data': data, 'Precipitacao_mm': precipitacao})
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
         
-    df = pd.DataFrame(dados)
-    
-    return df
+        datas = data['daily']['time']
+        chuvas = data['daily']['precipitation_sum']
+        
+        df = pd.DataFrame({
+            'Data': datas,
+            'Precipitacao_mm': chuvas
+        })
+        print("[SUCESSO] Dados reais de Campo Grande obtidos via API.")
+        return df
+
+    except Exception as e:
+        print(f"\n[AVISO] Falha na API: {e}")
+        print("-> Usando dados de contingência para o dashboard não ficar vazio.\n")
+        
+        mock_dados = [
+            {'Data': '2024-01-01', 'Precipitacao_mm': 12.0},
+            {'Data': '2024-01-02', 'Precipitacao_mm': 2.0},
+            {'Data': '2024-01-03', 'Precipitacao_mm': 0.0},
+            {'Data': '2024-01-04', 'Precipitacao_mm': 25.5},
+            {'Data': '2024-01-05', 'Precipitacao_mm': 5.0}
+        ]
+        return pd.DataFrame(mock_dados)
 
 if __name__ == '__main__':
-    df_chuva = coletar_dados_chuva()
-    print(df_chuva)
+    print(coletar_dados_chuva())
