@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import dash
 from dash import dcc, html
-import plotly.express as px
+import plotly.graph_objects as go
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -22,37 +22,67 @@ server = app.server
 
 # criaçao do grafico 
 
-fig = px.line(
-    df_final, 
-    x='Data', 
-    y='Indice_Risco',
-    title='Índice de Risco Hídrico ao Longo do Tempo',
-    labels={'Data': 'Data de Coleta', 'Indice_Risco': 'Índice de Risco (1-10)'},
-    markers=True 
-)
+fig = go.Figure()
 
+fig.add_trace(go.Scatter(
+    x=df_final['Data'], 
+    y=df_final['Indice_Risco'], 
+    mode='lines+markers', 
+    name='Nível de Risco (1-10)',
+    line=dict(color='crimson', width=4),
+    yaxis='y1'
+))
+
+fig.add_trace(go.Bar(
+    x=df_final['Data'], 
+    y=df_final['Precipitacao_mm'], 
+    name='Chuva Acumulada (mm)',
+    marker_color='royalblue',
+    yaxis='y2'
+))
 
 fig.update_layout(
-    xaxis_title='Data',
-    yaxis_title='Índice de Risco',
-    yaxis=dict(range=[0, 11]), 
-    template='plotly_white'
+    xaxis_title='Data de Coleta',
+    yaxis=dict(
+        title='Risco Hídrico',
+        range=[0, 10],
+        side='left',
+        showgrid=True,
+        gridcolor='lightgrey'
+    ),
+    yaxis2=dict(
+        title='Precipitação (mm)',
+        overlaying='y',
+        side='right',
+        showgrid=False,
+        rangemode='tozero'
+    ),
+    legend=dict(
+        x=0.5,
+        y=1.05, 
+        xanchor='center',
+        yanchor='bottom',
+        orientation='h'
+    ),
+    template='plotly_white',
+    hovermode='x unified'
 )
 
 app.layout = html.Div(children=[
     html.H1(
-        children='Observatório de Segurança Hídrica',
+        children='Observatório Hídrico - Campo Grande / MS',
         style={'textAlign': 'center', 'color': '#007BFF'}
     ),
 
     html.Div(
-        children='Dashboard para monitoramento de risco hídrico baseado em dados de precipitação.',
+        children='Monitoramento em Tempo Real de Risco Hídrico via API Open-Meteo',
         style={'textAlign': 'center', 'marginBottom': '20px'}
     ),
 
     dcc.Graph(
         id='risk-graph',
-        figure=fig
+        figure=fig,
+        style={'marginTop': '20px'}
     )
 ])
 
