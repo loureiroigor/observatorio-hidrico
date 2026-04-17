@@ -10,14 +10,20 @@ import dash_bootstrap_components as dbc
 # Ajuste de caminho para os módulos internos
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Importação do pipeline de dados
-from src.scraping.inmet_scraper import coletar_dados_chuva
+from src.scraping.inmet_scraper import coletar_dados_chuva, raspar_inmet_tabela, coletar_detalhes_horarios_api
 from src.processing.calculadora_risco import calcular_vulnerabilidade
 
-# 1. Coleta e Processamento
+
+# Coleta para o Gráfico (API)
 df_chuva = coletar_dados_chuva()
 df_final = calcular_vulnerabilidade(df_chuva)
 df_final['Data'] = pd.to_datetime(df_final['Data'])
+
+# Nova Coleta para a Auditoria (INMET)
+df_inmet_bruto = raspar_inmet_tabela()
+
+# Nova Coleta para a Auditoria Digital (Open-Meteo) - ADICIONE ESTA LINHA
+df_api_auditoria = coletar_detalhes_horarios_api()
 
 # Extração de métricas para os Cards
 last_data_leitura = df_final['Data'].iloc[-1].strftime('%d/%m/%Y %H:%M')
@@ -76,6 +82,9 @@ fig.update_layout(
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
 server = app.server
 
+risco_valor = float(df_final['Indice_Risco'].iloc[-1])
+cor_risco = "danger" if risco_valor >= 8.0 else "warning" if risco_valor >= 4.0 else "success"
+
 app.layout = dbc.Container([
     # Cabeçalho
     html.H2("Observatório Hídrico - Campo Grande / MS", className="text-center my-4"),
@@ -105,7 +114,7 @@ app.layout = dbc.Container([
                 html.H4(f"{risco_hidrico_atual:.2f}", className="card-title"),
                 html.P("Índice de risco atual (1-10).", className="card-text"),
             ])
-        ], color="warning", inverse=True, className="h-100 shadow"), md=4),
+        ], color=cor_risco, inverse=True, className="h-100 shadow"), md=4),
     ], className="mb-4 g-4"),
 
     # Gráfico Principal
@@ -135,7 +144,28 @@ app.layout = dbc.Container([
                 html.A("Saiba mais sobre o ODS 6", href="https://brasil.un.org/pt-br/sdgs/6", target="_blank", className="btn btn-outline-primary btn-sm")
             ])
         ], color="light", className="shadow"), md=5),
-    ], className="mt-4 mb-5 g-4")
+    ], className="mt-4 mb-5 g-4"),
+
+
+    dbc.Row([
+        dbc.Col(dbc.Card([
+            dbc.CardHeader("Painel de Auditoria: Dados Brutos do Portal INMET", className="fw-bold bg-dark text-white"),
+            dbc.CardBody([
+                html.P("Os dados abaixo foram extraídos via Web Scraping diretamente da estação A702 (Campo Grande) para validação técnica.", className="card-text small text-muted"),
+                dbc.Table.from_dataframe(df_inmet_bruto, striped=True, bordered=True, hover=True, size="sm")
+            ])
+        ], className="shadow mb-5"), width=12)
+    ]),
+    
+    dbc.Row([
+        dbc.Col(dbc.Card([
+            dbc.CardHeader("Painel de Auditoria Digital: Open-Meteo", className="fw-bold bg-primary text-white"),
+            dbc.CardBody([
+                html.P("Dados horários baseados em modelos de satélite para comparação com o sensor físico.", className="card-text small text-muted"),
+                dbc.Table.from_dataframe(df_api_auditoria, striped=True, bordered=True, hover=True, size="sm")
+            ])
+        ], className="shadow mb-5"), width=12)
+    ])
 
 ], fluid=True)
 
