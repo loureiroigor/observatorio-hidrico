@@ -1,143 +1,260 @@
-# -*- coding: utf-8 -*-
-import sys
 import os
-import pandas as pd
-import dash
-from dash import dcc, html
-import plotly.graph_objects as go
-import dash_bootstrap_components as dbc
+import sys
 
-# Ajuste de caminho para os módulos internos
+import dash
+import dash_bootstrap_components as dbc
+import pandas as pd
+import plotly.graph_objects as go
+from dash import dcc, html
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Importação do pipeline de dados
-from src.scraping.inmet_scraper import coletar_dados_chuva
-from src.processing.calculadora_risco import calcular_vulnerabilidade
+from src.processing.calculadora_risco import montar_painel_risco
 
-# 1. Coleta e Processamento
-df_chuva = coletar_dados_chuva()
-df_final = calcular_vulnerabilidade(df_chuva)
-df_final['Data'] = pd.to_datetime(df_final['Data'])
 
-# Extração de métricas para os Cards
-last_data_leitura = df_final['Data'].iloc[-1].strftime('%d/%m/%Y %H:%M')
-risco_hidrico_atual = df_final['Indice_Risco'].iloc[-1]
+painel = montar_painel_risco()
 
-# 2. Configuração do Gráfico de Eixo Duplo (V2)
-fig = go.Figure()
+df_precip = painel["df_precipitacao"].copy()
+df_precip["Data"] = pd.to_datetime(df_precip["Data"], errors="coerce")
+df_precip = df_precip.dropna(subset=["Data"]).sort_values("Data")
 
-# Linha de Risco (Eixo Y1)
-fig.add_trace(go.Scatter(
-    x=df_final['Data'], 
-    y=df_final['Indice_Risco'], 
-    mode='lines+markers', 
-    name='Nível de Risco (1-10)',
-    line=dict(color='crimson', width=4),
-    yaxis='y1'
-))
+df_hist = painel["df_historico_semanal"].copy()
+if not df_hist.empty:
+    df_hist["Data"] = pd.to_datetime(df_hist["Data"], errors="coerce")
 
-# Barras de Chuva (Eixo Y2)
-fig.add_trace(go.Bar(
-    x=df_final['Data'], 
-    y=df_final['Precipitacao_mm'], 
-    name='Chuva Acumulada (mm)',
-    marker_color='royalblue',
-    yaxis='y2'
-))
+df_diagnostico = painel["diagnostico_df"]
+df_imasul = painel["coleta"]["imasul"].payload.get("table", pd.DataFrame())
+df_inmet = painel["coleta"]["inmet"].payload.get("table", pd.DataFrame())
+df_openmeteo = painel["coleta"]["open_meteo"].payload.get("hourly", pd.DataFrame())
 
-fig.update_layout(
-    xaxis_title='Data de Coleta',
-    yaxis=dict(
-        title='Risco Hídrico',
-        range=[0, 10],
-        side='left',
-        showgrid=True,
-        gridcolor='lightgrey'
-    ),
-    yaxis2=dict(
-        title='Precipitação (mm)',
-        overlaying='y',
-        side='right',
-        showgrid=False,
-        rangemode='tozero'
-    ),
-    legend=dict(
-        x=0.5,
-        y=1.05, 
-        xanchor='center',
-        yanchor='bottom',
-        orientation='h'
-    ),
-    template='plotly_white',
-    hovermode='x unified'
+risco_atual = float(painel["indice_risco"])
+risco_cor = "#e85d04" if risco_atual >= 8 else "#f48c06" if risco_atual >= 5 else "#2a9d8f"
+
+fig_principal = go.Figure()
+fig_principal.add_trace(
+    go.Scatter(
+        x=df_hist["Data"] if not df_hist.empty else df_precip["Data"],
+        y=df_hist["Indice_Risco"] if not df_hist.empty else [],
+        mode="lines+markers",
+        name="Risco Ajustado",
+        line=dict(color="#e76f51", width=3),
+        marker=dict(size=8),
+        yaxis="y1",
+    )
+)
+fig_principal.add_trace(
+    go.Bar(
+        x=df_precip["Data"],
+        y=df_precip["Precipitacao_mm"],
+        name="Precipitacao (mm)",
+        marker_color="#264653",
+        opacity=0.45,
+        yaxis="y2",
+    )
+)
+fig_principal.update_layout(
+    margin=dict(l=20, r=20, t=20, b=20),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    xaxis=dict(title="Data", showgrid=False),
+    yaxis=dict(title="Indice de Risco (1-10)", range=[1, 10], gridcolor="rgba(38,70,83,0.12)"),
+    yaxis2=dict(title="Chuva (mm)", overlaying="y", side="right", showgrid=False, rangemode="tozero"),
+    legend=dict(orientation="h", y=1.07, x=0.5, xanchor="center"),
+    hovermode="x unified",
 )
 
-# 3. Layout da Interface (V2 Sólida com Bootstrap)
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY])
+fig_weekly = go.Figure()
+if not df_hist.empty:
+    fig_weekly.add_trace(
+        go.Scatter(
+            x=df_hist["Data"],
+            y=df_hist["Risco_Base"],
+            name="Consenso Base",
+            mode="lines",
+            line=dict(color="#577590", width=2, dash="dot"),
+        )
+    )
+    fig_weekly.add_trace(
+        go.Scatter(
+            x=df_hist["Data"],
+            y=df_hist["Risco_Ajustado"],
+            name="Consenso Ajustado",
+            mode="lines+markers",
+            line=dict(color="#f94144", width=3),
+            marker=dict(size=7),
+        )
+    )
+
+fig_weekly.update_layout(
+    margin=dict(l=20, r=20, t=20, b=20),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    xaxis=dict(title="Semana", showgrid=False),
+    yaxis=dict(title="Risco normalizado", range=[0, 1], gridcolor="rgba(87,117,144,0.15)"),
+    legend=dict(orientation="h", y=1.08, x=0.5, xanchor="center"),
+)
+
+provedores = painel["status_provedores"]
+ativos = sum(1 for status in provedores.values() if status == "ok")
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
+app.title = "Observatorio Hidrico"
 
-app.layout = dbc.Container([
-    # Cabeçalho
-    html.H2("Observatório Hídrico - Campo Grande / MS", className="text-center my-4"),
-    html.P("Monitoramento em Tempo Real de Risco Hídrico via API Open-Meteo", className="text-center text-muted mb-5"),
+app.layout = dbc.Container(
+    [
+        html.Div(
+            [
+                html.H1("Observatorio Hidrico", className="hero-title"),
+                html.P(
+                    "Campo Grande/MS | consenso multiprovedor com fator de recuperacao hidrica",
+                    className="hero-subtitle",
+                ),
+            ],
+            className="hero",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.P("Indice Atual", className="metric-label"),
+                                html.H2(f"{risco_atual:.2f}", className="metric-value", style={"color": risco_cor}),
+                                html.P(
+                                    f"ANA: {painel['classificacao_ana']} | Dias de chuva consecutivos: {painel['dias_chuva_consecutivos']}",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="glass-card h-100",
+                    ),
+                    md=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.P("Convergencia de Fontes", className="metric-label"),
+                                html.H2(f"{ativos}/5 provedores ativos", className="metric-value"),
+                                html.P(
+                                    f"Fator de recuperacao: {painel['fator_recuperacao']:.3f}",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="glass-card h-100",
+                    ),
+                    md=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.P("Historico Semanal", className="metric-label"),
+                                html.H2(
+                                    f"Risco medio: {painel['resumo_semanal']['risco_medio']:.2f}",
+                                    className="metric-value",
+                                ),
+                                html.P(
+                                    f"Chuva media: {painel['resumo_semanal']['chuva_media']:.1f} mm | Dias chuvosos: {painel['resumo_semanal']['dias_chuvosos']}",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="glass-card h-100",
+                    ),
+                    md=4,
+                ),
+            ],
+            className="g-4 mb-4",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H4("Diagnostico de Convergencia", className="section-title"),
+                                html.P(
+                                    "O risco final considera 40% nivel de rios (IMASUL), 40% umidade do solo (CEMADEN) e 20% precipitacao."
+                                    " Em periodos de chuva consecutiva, o motor aplica decaimento exponencial e aproxima o indicador da classe ANA.",
+                                    className="section-description",
+                                ),
+                                dbc.Table.from_dataframe(df_diagnostico, striped=True, bordered=False, hover=True, size="sm"),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody([html.H4("Risco x Precipitacao", className="section-title"), dcc.Graph(figure=fig_principal)]),
+                        className="panel-card",
+                    ),
+                    md=8,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody([html.H4("Recuperacao Semanal", className="section-title"), dcc.Graph(figure=fig_weekly)]),
+                        className="panel-card",
+                    ),
+                    md=4,
+                ),
+            ],
+            className="g-4 mb-4",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H4("Auditoria IMASUL", className="section-title"),
+                                dbc.Table.from_dataframe(df_imasul, striped=True, bordered=False, hover=True, size="sm"),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H4("Auditoria INMET", className="section-title"),
+                                dbc.Table.from_dataframe(df_inmet, striped=True, bordered=False, hover=True, size="sm"),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=4,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H4("Open-Meteo Horario", className="section-title"),
+                                dbc.Table.from_dataframe(df_openmeteo, striped=True, bordered=False, hover=True, size="sm"),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=4,
+                ),
+            ],
+            className="g-4 mb-5",
+        ),
+    ],
+    fluid=True,
+    className="dashboard-root",
+)
 
-    # Linha de Métricas (Cartões Coloridos)
-    dbc.Row([
-        dbc.Col(dbc.Card([
-            dbc.CardHeader("Status do Sistema", className="fw-bold"),
-            dbc.CardBody([
-                html.H4("Operacional", className="card-title"),
-                html.P("O sistema está coletando e processando dados ativamente.", className="card-text"),
-            ])
-        ], color="success", inverse=True, className="h-100 shadow"), md=4),
-        
-        dbc.Col(dbc.Card([
-            dbc.CardHeader("Data da Última Leitura", className="fw-bold"),
-            dbc.CardBody([
-                html.H4(last_data_leitura, className="card-title"),
-                html.P("Última atualização dos dados de precipitação.", className="card-text"),
-            ])
-        ], color="info", inverse=True, className="h-100 shadow"), md=4),
-        
-        dbc.Col(dbc.Card([
-            dbc.CardHeader("Risco Hídrico Atual", className="fw-bold"),
-            dbc.CardBody([
-                html.H4(f"{risco_hidrico_atual:.2f}", className="card-title"),
-                html.P("Índice de risco atual (1-10).", className="card-text"),
-            ])
-        ], color="warning", inverse=True, className="h-100 shadow"), md=4),
-    ], className="mb-4 g-4"),
-
-    # Gráfico Principal
-    dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody(dcc.Graph(id='risk-graph', figure=fig)), className="shadow"))
-    ]),
-
-    # Nova Linha: Glossário e Contexto ODS 6 (Adicionada agora)
-    dbc.Row([
-        # Card explicativo dos níveis de risco
-        dbc.Col(dbc.Card([
-            dbc.CardHeader("Interpretando o Índice de Risco", className="fw-bold"),
-            dbc.CardBody([
-                html.Ul([
-                    html.Li([html.B("8.0 a 10.0: Risco Crítico"), " - Escassez severa. Medidas de economia urgentes são recomendadas."]),
-                    html.Li([html.B("4.0 a 7.0: Risco Moderado"), " - Atenção aos níveis de reservatórios e consumo consciente."]),
-                    html.Li([html.B("1.0 a 3.0: Risco Baixo"), " - Abastecimento seguro. Condições climáticas favoráveis."]),
-                ], className="card-text")
-            ])
-        ], color="light", className="shadow"), md=7),
-
-        # Card de Alinhamento com a ONU (ODS 6)
-        dbc.Col(dbc.Card([
-            dbc.CardHeader("Compromisso ODS 6", className="fw-bold"),
-            dbc.CardBody([
-                html.P("Este projeto automatiza a transparência hídrica para assegurar a gestão sustentável da água e o saneamento para todos.", className="card-text small"),
-                html.A("Saiba mais sobre o ODS 6", href="https://brasil.un.org/pt-br/sdgs/6", target="_blank", className="btn btn-outline-primary btn-sm")
-            ])
-        ], color="light", className="shadow"), md=5),
-    ], className="mt-4 mb-5 g-4")
-
-], fluid=True)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)

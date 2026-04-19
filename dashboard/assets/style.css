@@ -1,0 +1,97 @@
+.dashboard-root {
+  min-height: 100vh;
+  background: radial-gradient(circle at 15% 15%, #e9f5db 0%, rgba(233, 245, 219, 0) 45%),
+              radial-gradient(circle at 85% 5%, #f4d35e 0%, rgba(244, 211, 94, 0) 30%),
+              linear-gradient(135deg, #f8fafc 0%, #edf2f4 60%, #e0fbfc 100%);
+  padding: 24px;
+  font-family: "Poppins", "Segoe UI", sans-serif;
+}
+
+.hero {
+  border-radius: 24px;
+  padding: 28px;
+  margin-bottom: 20px;
+  background: linear-gradient(120deg, #264653 0%, #2a9d8f 55%, #e9c46a 100%);
+  box-shadow: 0 12px 36px rgba(38, 70, 83, 0.24);
+}
+
+.hero-title {
+  color: #f1faee;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+.hero-subtitle {
+  color: rgba(241, 250, 238, 0.9);
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.glass-card,
+.panel-card {
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 26px rgba(38, 70, 83, 0.11);
+  backdrop-filter: blur(4px);
+}
+
+.metric-label {
+  color: #3c4a51;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+  letter-spacing: 1.1px;
+}
+
+.metric-value {
+  margin-bottom: 6px;
+  color: #1b263b;
+  font-weight: 700;
+}
+
+.metric-footnote {
+  color: #4f5d75;
+  margin-bottom: 0;
+  font-size: 0.88rem;
+}
+
+.section-title {
+  color: #1d3557;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.section-description {
+  color: #415a77;
+  margin-bottom: 14px;
+}
+
+.panel-card .table {
+  margin-bottom: 0;
+}
+
+.panel-card .table thead th {
+  color: #1d3557;
+  border-bottom: 1px solid rgba(29, 53, 87, 0.2);
+}
+
+.panel-card .table tbody td {
+  color: #2f3e46;
+  border-color: rgba(47, 62, 70, 0.1);
+}
+
+@media (max-width: 768px) {
+  .dashboard-root {
+    padding: 14px;
+  }
+
+  .hero {
+    padding: 20px;
+  }
+
+  .hero-title {
+    font-size: 1.6rem;
+  }
+}
