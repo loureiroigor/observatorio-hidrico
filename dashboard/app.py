@@ -29,6 +29,11 @@ df_openmeteo = painel["coleta"]["open_meteo"].payload.get("hourly", pd.DataFrame
 
 risco_atual = float(painel["indice_risco"])
 risco_cor = "#e85d04" if risco_atual >= 8 else "#f48c06" if risco_atual >= 5 else "#2a9d8f"
+confidence_score = float(painel.get("confidence_score", 0.0))
+trend_info = painel.get("trend", {"trend": "estavel", "slope": 0.0})
+trend_label = str(trend_info.get("trend", "estavel")).capitalize()
+trend_slope = float(trend_info.get("slope", 0.0))
+trend_color = "#e63946" if trend_label.lower() == "agravando" else "#2a9d8f" if trend_label.lower() == "recuperando" else "#577590"
 
 fig_principal = go.Figure()
 fig_principal.add_trace(
@@ -165,6 +170,43 @@ app.layout = dbc.Container(
                         className="glass-card h-100",
                     ),
                     md=4,
+                ),
+            ],
+            className="g-4 mb-4",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.P("Confidence Score", className="metric-label"),
+                                html.H2(f"{confidence_score:.1f}/100", className="metric-value"),
+                                html.P(
+                                    "Disponibilidade e recencia das fontes em tempo real.",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="glass-card h-100",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.P("Tendencia do Risco", className="metric-label"),
+                                html.H2(trend_label, className="metric-value", style={"color": trend_color}),
+                                html.P(
+                                    f"Inclinacao: {trend_slope:+.3f} ponto/dia",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="glass-card h-100",
+                    ),
+                    md=6,
                 ),
             ],
             className="g-4 mb-4",
