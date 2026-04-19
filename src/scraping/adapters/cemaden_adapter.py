@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from io import StringIO
-import os
 
 import pandas as pd
 import requests
@@ -12,44 +10,82 @@ from .base import AdapterResult, BaseAdapter
 
 class CemadenAdapter(BaseAdapter):
     source_name = "cemaden"
-    _fallback = pd.DataFrame([{"Estacao": "MS-CG", "UmidadeSolo_pct": 37.0}])
-
-    def __init__(self, csv_url: str | None = None):
-        self.csv_url = csv_url or os.getenv("CEMADEN_SOIL_URL", "")
+    product_meta_url = "https://mapasecas.cemaden.gov.br/rest/product/meta/iis3"
+    target_bbox = "-55.0,-21.0,-54.0,-20.0"
 
     def fetch(self) -> AdapterResult:
-        if not self.csv_url:
-            return self.unavailable(
-                "URL do CEMADEN nao configurada. Defina CEMADEN_SOIL_URL para dados reais.",
-                payload={"table": self._fallback.copy(), "mean_soil_moisture": 37.0},
+        try:
+            meta = requests.get(self.product_meta_url, timeout=20).json()
+            timestep = self._latest_timestep(meta.get("timesteps", {}))
+            if not timestep:
+                raise ValueError("CEMADEN nao retornou timesteps para IIS3")
+
+            feature = self._fetch_feature(meta.get("layerserver", ""), timestep)
+            if not feature:
+                raise ValueError("CEMADEN nao retornou feature para Campo Grande/MS")
+
+            props = feature.get("properties", {})
+            nivel = float(props.get("nivel", 3.0))
+            umidade_proxy = max(8.0, min(72.0, 72.0 - (nivel * 8.0)))
+
+            table = pd.DataFrame(
+                [
+                    {
+                        "Estacao": f"{props.get('nm_mun', 'Campo Grande')} - {props.get('sigla_uf', 'MS')}",
+                        "UmidadeSolo_pct": round(umidade_proxy, 2),
+                        "IndiceIntegradoSeca_nivel": nivel,
+                        "Referencia": props.get("referencia", datetime.now().isoformat()),
+                    }
+                ]
             )
 
-        try:
-            response = requests.get(self.csv_url, timeout=20)
-            response.raise_for_status()
-            parsed = self._select_fields(pd.read_csv(StringIO(response.text), sep=None, engine="python"))
-            if parsed.empty:
-                raise ValueError("CSV do CEMADEN nao possui colunas de umidade do solo reconhecidas")
             return AdapterResult(
                 source=self.source_name,
                 status="ok",
                 updated_at=datetime.now(),
-                payload={"table": parsed.tail(20), "mean_soil_moisture": float(parsed["UmidadeSolo_pct"].mean())},
+                payload={
+                    "table": table,
+                    "mean_soil_moisture": float(table["UmidadeSolo_pct"].mean()),
+                    "source_url": self.product_meta_url,
+                },
             )
         except Exception as exc:
+            fallback = pd.DataFrame([{"Estacao": "MS-CG", "UmidadeSolo_pct": 37.0}])
             return self.unavailable(
                 str(exc),
-                payload={"table": self._fallback.copy(), "mean_soil_moisture": 37.0},
+                payload={"table": fallback, "mean_soil_moisture": 37.0, "source_url": self.product_meta_url},
             )
 
     @staticmethod
-    def _select_fields(df: pd.DataFrame) -> pd.DataFrame:
-        normalized = {col.lower().strip(): col for col in df.columns}
-        soil_col = next((normalized[key] for key in ["umidade_solo", "umidade_solo_pct", "umidadesolo", "soil_moisture", "soil_moisture_pct"] if key in normalized), None)
-        if soil_col is None:
-            return pd.DataFrame()
+    def _latest_timestep(timesteps: dict) -> dict:
+        if not isinstance(timesteps, dict) or not timesteps:
+            return {}
+        latest_key = sorted(timesteps.keys(), reverse=True)[0]
+        value = timesteps.get(latest_key, {})
+        return value if isinstance(value, dict) else {}
 
-        station_col = next((normalized[key] for key in ["estacao", "estacao_nome", "station", "nome"] if key in normalized), None)
-        out = pd.DataFrame({"UmidadeSolo_pct": pd.to_numeric(df[soil_col], errors="coerce")}).dropna(subset=["UmidadeSolo_pct"])
-        out.insert(0, "Estacao", df.loc[out.index, station_col].astype(str) if station_col else "CEMADEN")
-        return out
+    def _fetch_feature(self, layer_server: str, timestep: dict) -> dict:
+        if not layer_server:
+            return {}
+        params = {
+            "SERVICE": "WMS",
+            "VERSION": "1.1.1",
+            "REQUEST": "GetFeatureInfo",
+            "LAYERS": timestep.get("layer", "produtos:iis3"),
+            "QUERY_LAYERS": timestep.get("layer", "produtos:iis3"),
+            "STYLES": "",
+            "BBOX": self.target_bbox,
+            "SRS": "EPSG:4326",
+            "WIDTH": "101",
+            "HEIGHT": "101",
+            "X": "50",
+            "Y": "50",
+            "INFO_FORMAT": "application/json",
+            "FEATURE_COUNT": "1",
+            "viewparams": timestep.get("viewparams", ""),
+        }
+        response = requests.get(layer_server, params=params, timeout=20)
+        response.raise_for_status()
+        payload = response.json()
+        features = payload.get("features", []) if isinstance(payload, dict) else []
+        return features[0] if features else {}
