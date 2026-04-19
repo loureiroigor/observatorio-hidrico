@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 
 @dataclass
@@ -11,7 +11,7 @@ class AdapterResult:
     source: str
     status: str
     updated_at: datetime
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
 
 
@@ -22,7 +22,7 @@ class BaseAdapter(ABC):
     def fetch(self) -> AdapterResult:
         raise NotImplementedError
 
-    def unavailable(self, error: str, payload: Dict[str, Any] | None = None) -> AdapterResult:
+    def unavailable(self, error: str, payload: dict[str, Any] | None = None) -> AdapterResult:
         return AdapterResult(
             source=self.source_name,
             status="unavailable",

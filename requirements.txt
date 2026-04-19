@@ -2,7 +2,6 @@ pandas
 requests
 beautifulsoup4
 dash
-inmetpy
 dash-bootstrap-components
 plotly
 selenium

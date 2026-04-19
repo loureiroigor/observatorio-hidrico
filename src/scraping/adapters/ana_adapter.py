@@ -4,7 +4,6 @@ from datetime import datetime
 import os
 import re
 
-import pandas as pd
 import requests
 
 from .base import AdapterResult, BaseAdapter
@@ -26,45 +25,32 @@ class AnaSecaAdapter(BaseAdapter):
         try:
             response = requests.get(self.endpoint, timeout=20)
             response.raise_for_status()
-            content_type = response.headers.get("content-type", "")
-
-            if "json" in content_type:
-                parsed = self._from_json(response.json())
-            else:
-                parsed = self._from_text(response.text)
-
-            classification = parsed.get("classification", "S1")
-            region = parsed.get("region", "Campo Grande/MS")
-
+            is_json = "json" in response.headers.get("content-type", "")
+            parsed = self._from_json(response.json()) if is_json else self._from_text(response.text)
             return AdapterResult(
                 source=self.source_name,
                 status="ok",
                 updated_at=datetime.now(),
-                payload={"classification": classification, "region": region},
+                payload={"classification": parsed.get("classification", "S1"), "region": parsed.get("region", "Campo Grande/MS")},
             )
         except Exception as exc:
-            return self.unavailable(
-                str(exc), payload={"classification": "S1", "region": "Campo Grande/MS"}
-            )
+            return self.unavailable(str(exc), payload={"classification": "S1", "region": "Campo Grande/MS"})
 
     @staticmethod
     def _from_json(data: dict) -> dict:
-        if isinstance(data, dict):
-            region = data.get("region") or data.get("regiao") or "Campo Grande/MS"
-            raw = data.get("classification") or data.get("classe") or data.get("seca") or "S1"
-            return {"region": region, "classification": AnaSecaAdapter._normalize_class(raw)}
-        return {"region": "Campo Grande/MS", "classification": "S1"}
+        if not isinstance(data, dict):
+            return {"region": "Campo Grande/MS", "classification": "S1"}
+        region = data.get("region") or data.get("regiao") or "Campo Grande/MS"
+        raw = data.get("classification") or data.get("classe") or data.get("seca") or "S1"
+        return {"region": region, "classification": AnaSecaAdapter._normalize_class(raw)}
 
     @staticmethod
     def _from_text(text: str) -> dict:
         match = re.search(r"\bS[0-4]\b", text.upper())
-        classification = match.group(0) if match else "S1"
-        return {"region": "Campo Grande/MS", "classification": classification}
+        return {"region": "Campo Grande/MS", "classification": match.group(0) if match else "S1"}
 
     @staticmethod
     def _normalize_class(value: str) -> str:
         text = str(value).strip().upper()
-        if text in {"S0", "S1", "S2", "S3", "S4"}:
-            return text
         match = re.search(r"S[0-4]", text)
-        return match.group(0) if match else "S1"
+        return text if text in {"S0", "S1", "S2", "S3", "S4"} else (match.group(0) if match else "S1")
