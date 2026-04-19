@@ -153,6 +153,15 @@ trend_label = str(trend_info.get("trend", "estavel")).capitalize()
 trend_slope = float(trend_info.get("slope", 0.0))
 trend_color = "#e63946" if trend_label.lower() == "agravando" else "#2a9d8f" if trend_label.lower() == "recuperando" else "#577590"
 ativos = sum(status == "ok" for status in painel["status_provedores"].values())
+provider_labels = {
+    "imasul": "IMASUL",
+    "cemaden": "CEMADEN",
+    "ana": "ANA",
+    "inmet": "INMET",
+    "open_meteo": "OPEN-METEO",
+}
+active_providers = [provider_labels[key] for key, status in painel["status_provedores"].items() if status == "ok"]
+fallback_providers = [provider_labels[key] for key, status in painel["status_provedores"].items() if status != "ok"]
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 server = app.server
@@ -218,6 +227,30 @@ app.layout = dbc.Container(
                     dbc.Card(
                         dbc.CardBody(
                             [
+                                html.H4(_label_with_tip("Status dos Provedores", "tip-provedores"), className="section-title"),
+                                html.P(
+                                    f"Ativos agora: {', '.join(active_providers) if active_providers else 'nenhum'}",
+                                    className="section-description",
+                                ),
+                                html.P(
+                                    f"Em fallback: {', '.join(fallback_providers) if fallback_providers else 'nenhum'}",
+                                    className="metric-footnote",
+                                ),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
                                 html.H4(_label_with_tip("Diagnostico de Convergencia", "tip-diagnostico"), className="section-title"),
                                 # explica o porquê do indice pra reduzir amnesia da seca
                                 html.P(
@@ -250,6 +283,32 @@ app.layout = dbc.Container(
             ],
             className="g-4 mb-5",
         ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H4(_label_with_tip("Fontes e Dados Utilizados", "tip-fontes-dados"), className="section-title"),
+                                html.Ul(
+                                    [
+                                        html.Li("IMASUL: Boletim em pdf com nivel dos rios para bacias do paraguai/parana em ms."),
+                                        html.Li("CEMADEN: Umidade do solo por estacao via csv/api, usada como sinal de estresse hidrico."),
+                                        html.Li("ANA: Classe oficial do monitor de secas (s0 a s4), usada como ancora de contexto regional."),
+                                        html.Li("INMET: Chuva observada da estacao a702 via raspagem da tabela oficial."),
+                                        html.Li("OPEN-METEO: Chuva diaria e horaria por api para complementar recencia e continuidade da serie."),
+                                    ],
+                                    className="section-description",
+                                ),
+                            ]
+                        ),
+                        className="panel-card",
+                    ),
+                    md=12,
+                )
+            ],
+            className="mb-4",
+        ),
         dbc.Tooltip("mede confiabilidade do dado pela disponibilidade dos adapters e recencia das leituras.", target="tip-confidence", placement="top"),
         dbc.Tooltip("mostra inclinacao semanal do indice: agravando, estavel ou recuperando.", target="tip-trend", placement="top"),
         dbc.Tooltip("abre o peso e a contribuicao de cada fonte para explicar por que o risco final ficou nesse valor.", target="tip-diagnostico", placement="top"),
@@ -258,6 +317,8 @@ app.layout = dbc.Container(
         dbc.Tooltip("indice final na escala 1 a 10 apos consenso, ancora ana e recuperacao hidrologica.", target="tip-indice", placement="top"),
         dbc.Tooltip("quantas fontes estao ativas agora e contribuindo no consenso.", target="tip-fontes", placement="top"),
         dbc.Tooltip("resumo dos ultimos dias para evitar decisao por chuva isolada.", target="tip-historico", placement="top"),
+        dbc.Tooltip("mostra exatamente quais fontes estao ativas e quais entraram em fallback seguro.", target="tip-provedores", placement="top"),
+        dbc.Tooltip("documenta de onde cada dado do painel e extraido para auditoria academica.", target="tip-fontes-dados", placement="top"),
     ],
     fluid=True,
     className="dashboard-root",
