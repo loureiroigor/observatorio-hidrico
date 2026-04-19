@@ -9,4 +9,7 @@ selenium
 webdriver-manager
 lxml
 pdfplumber
+scikit-learn
+matplotlib
+seaborn
 
