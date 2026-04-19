@@ -99,16 +99,45 @@ def _build_weekly_figure(df_hist: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def _metric_card(title: str, headline: str, footnote: str, color: str | None = None) -> dbc.Col:
+def _metric_card(
+    title: str,
+    headline: str,
+    footnote: str,
+    color: str | None = None,
+    tip_target: str | None = None,
+) -> dbc.Col:
     h2_props = {"className": "metric-value"}
     if color:
         h2_props["style"] = {"color": color}
+    label = _label_with_tip(title, tip_target) if tip_target else title
     return dbc.Col(
         dbc.Card(
-            dbc.CardBody([html.P(title, className="metric-label"), html.H2(headline, **h2_props), html.P(footnote, className="metric-footnote")]),
+            dbc.CardBody([html.P(label, className="metric-label"), html.H2(headline, **h2_props), html.P(footnote, className="metric-footnote")]),
             className="glass-card h-100",
         ),
         md=4,
+    )
+
+
+def _label_with_tip(text: str, target_id: str) -> html.Span:
+    return html.Span(
+        [
+            text,
+            html.Span(
+                " i",
+                id=target_id,
+                style={
+                    "marginLeft": "6px",
+                    "fontSize": "0.72rem",
+                    "fontWeight": "700",
+                    "padding": "1px 5px",
+                    "borderRadius": "999px",
+                    "backgroundColor": "#dbe7ec",
+                    "color": "#264653",
+                    "cursor": "help",
+                },
+            ),
+        ]
     )
 
 
@@ -140,12 +169,13 @@ app.layout = dbc.Container(
         ),
         dbc.Row(
             [
-                _metric_card("Indice Atual", f"{risco_atual:.2f}", f"ANA: {painel['classificacao_ana']} | Dias de chuva consecutivos: {painel['dias_chuva_consecutivos']}", risco_cor),
-                _metric_card("Convergencia de Fontes", f"{ativos}/5 provedores ativos", f"Fator de recuperacao: {painel['fator_recuperacao']:.3f}"),
+                _metric_card("Indice Atual", f"{risco_atual:.2f}", f"ANA: {painel['classificacao_ana']} | Dias de chuva consecutivos: {painel['dias_chuva_consecutivos']}", risco_cor, "tip-indice"),
+                _metric_card("Convergencia de Fontes", f"{ativos}/5 provedores ativos", f"Fator de recuperacao: {painel['fator_recuperacao']:.3f}", tip_target="tip-fontes"),
                 _metric_card(
                     "Historico Semanal",
                     f"Risco medio: {painel['resumo_semanal']['risco_medio']:.2f}",
                     f"Chuva media: {painel['resumo_semanal']['chuva_media']:.1f} mm | Dias chuvosos: {painel['resumo_semanal']['dias_chuvosos']}",
+                    tip_target="tip-historico",
                 ),
             ],
             className="g-4 mb-4",
@@ -156,7 +186,7 @@ app.layout = dbc.Container(
                     dbc.Card(
                         dbc.CardBody(
                             [
-                                html.P("Confidence Score", className="metric-label"),
+                                html.P(_label_with_tip("Confidence Score", "tip-confidence"), className="metric-label"),
                                 html.H2(f"{confidence_score:.1f}/100", className="metric-value"),
                                 # expor confianca evita leitura binaria de risco alto/baixo
                                 html.P("Disponibilidade e recencia das fontes em tempo real.", className="metric-footnote"),
@@ -170,7 +200,7 @@ app.layout = dbc.Container(
                     dbc.Card(
                         dbc.CardBody(
                             [
-                                html.P("Tendencia do Risco", className="metric-label"),
+                                html.P(_label_with_tip("Tendencia do Risco", "tip-trend"), className="metric-label"),
                                 html.H2(trend_label, className="metric-value", style={"color": trend_color}),
                                 html.P(f"Inclinacao: {trend_slope:+.3f} ponto/dia", className="metric-footnote"),
                             ]
@@ -188,7 +218,7 @@ app.layout = dbc.Container(
                     dbc.Card(
                         dbc.CardBody(
                             [
-                                html.H4("Diagnostico de Convergencia", className="section-title"),
+                                html.H4(_label_with_tip("Diagnostico de Convergencia", "tip-diagnostico"), className="section-title"),
                                 # explica o porquê do indice pra reduzir amnesia da seca
                                 html.P(
                                     "O risco final considera 40% nivel de rios (IMASUL), 40% umidade do solo (CEMADEN) e 20% precipitacao."
@@ -207,8 +237,8 @@ app.layout = dbc.Container(
         ),
         dbc.Row(
             [
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4("Risco x Precipitacao", className="section-title"), dcc.Graph(figure=_build_main_figure(df_precip, df_hist))]), className="panel-card"), md=8),
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4("Recuperacao Semanal", className="section-title"), dcc.Graph(figure=_build_weekly_figure(df_hist))]), className="panel-card"), md=4),
+                dbc.Col(dbc.Card(dbc.CardBody([html.H4(_label_with_tip("Risco x Precipitacao", "tip-risco-chuva"), className="section-title"), dcc.Graph(figure=_build_main_figure(df_precip, df_hist))]), className="panel-card"), md=8),
+                dbc.Col(dbc.Card(dbc.CardBody([html.H4(_label_with_tip("Recuperacao Semanal", "tip-recuperacao"), className="section-title"), dcc.Graph(figure=_build_weekly_figure(df_hist))]), className="panel-card"), md=4),
             ],
             className="g-4 mb-4",
         ),
@@ -220,6 +250,14 @@ app.layout = dbc.Container(
             ],
             className="g-4 mb-5",
         ),
+        dbc.Tooltip("mede confiabilidade do dado pela disponibilidade dos adapters e recencia das leituras.", target="tip-confidence", placement="top"),
+        dbc.Tooltip("mostra inclinacao semanal do indice: agravando, estavel ou recuperando.", target="tip-trend", placement="top"),
+        dbc.Tooltip("abre o peso e a contribuicao de cada fonte para explicar por que o risco final ficou nesse valor.", target="tip-diagnostico", placement="top"),
+        dbc.Tooltip("compara a serie de risco ajustado com chuva diaria para evitar leitura isolada de evento curto.", target="tip-risco-chuva", placement="top"),
+        dbc.Tooltip("mostra como o risco responde ao fator de recuperacao com memoria hidrologica.", target="tip-recuperacao", placement="top"),
+        dbc.Tooltip("indice final na escala 1 a 10 apos consenso, ancora ana e recuperacao hidrologica.", target="tip-indice", placement="top"),
+        dbc.Tooltip("quantas fontes estao ativas agora e contribuindo no consenso.", target="tip-fontes", placement="top"),
+        dbc.Tooltip("resumo dos ultimos dias para evitar decisao por chuva isolada.", target="tip-historico", placement="top"),
     ],
     fluid=True,
     className="dashboard-root",
