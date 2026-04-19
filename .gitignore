@@ -1,0 +1,14 @@
+# python cache
+__pycache__/
+*.py[cod]
+
+# virtual environments
+.venv/
+venv/
+
+# tool/runtime outputs
+reports/
+
+# local env files
+.env
+.env.*
