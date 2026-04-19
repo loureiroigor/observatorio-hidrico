@@ -2,3 +2,10 @@ pandas
 requests
 beautifulsoup4
 dash
+inmetpy
+dash-bootstrap-components
+plotly
+selenium
+webdriver-manager
+lxml
+pdfplumber
