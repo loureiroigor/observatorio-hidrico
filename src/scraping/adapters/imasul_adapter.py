@@ -22,18 +22,28 @@ class ImasulAdapter(BaseAdapter):
 
     def fetch(self) -> AdapterResult:
         try:
-            source_pdf = self._resolve_latest_pdf_url()
-            response = requests.get(source_pdf, timeout=20)
-            response.raise_for_status()
-            if "pdf" not in response.headers.get("content-type", "").lower():
-                raise ValueError("Boletim IMASUL retornou conteudo nao-pdf")
+            source_pdf = None
+            levels_df = pd.DataFrame()
+            last_error = ""
 
-            text = self._extract_text(response.content)
-            levels_df = self._extract_river_levels(text)
-            if levels_df.empty:
-                levels_df = self._coerce_levels_from_text(text)
-            if levels_df.empty:
-                raise ValueError("Nao foi possivel extrair niveis de rios do boletim IMASUL")
+            for candidate_pdf in self._resolve_latest_pdf_candidates():
+                try:
+                    response = requests.get(candidate_pdf, timeout=20)
+                    response.raise_for_status()
+                    if "pdf" not in response.headers.get("content-type", "").lower():
+                        raise ValueError("conteudo nao-pdf")
+
+                    levels_df = self._extract_levels_from_pdf(response.content)
+                    if levels_df.empty:
+                        raise ValueError("pdf sem niveis fluviometricos extraiveis")
+
+                    source_pdf = candidate_pdf
+                    break
+                except Exception as exc:
+                    last_error = str(exc)
+
+            if levels_df.empty or source_pdf is None:
+                raise ValueError(f"Nao foi possivel extrair niveis de rios do boletim IMASUL ({last_error})")
 
             selected = levels_df[
                 levels_df["Bacia"].isin(["Paraguai", "Parana"]) | levels_df["Bacia"].str.contains("MS")
@@ -57,14 +67,17 @@ class ImasulAdapter(BaseAdapter):
                 payload={"table": fallback, "mean_level_m": 2.2, "source_url": self.boletim_pdf_url},
             )
 
-    def _resolve_latest_pdf_url(self) -> str:
+    def _resolve_latest_pdf_candidates(self) -> list[str]:
+        candidates: list[str] = []
         for resolver in (self._latest_from_wordpress_media, self._latest_from_boletins_page):
-            candidate = resolver()
-            if candidate:
-                return candidate
-        return self.boletim_pdf_url
+            for candidate in resolver():
+                if candidate and candidate not in candidates:
+                    candidates.append(candidate)
+        if self.boletim_pdf_url not in candidates:
+            candidates.append(self.boletim_pdf_url)
+        return candidates
 
-    def _latest_from_wordpress_media(self) -> str | None:
+    def _latest_from_wordpress_media(self) -> list[str]:
         response = requests.get(self.media_api_url, timeout=20)
         response.raise_for_status()
         payload = response.json()
@@ -76,12 +89,24 @@ class ImasulAdapter(BaseAdapter):
             and "boletim" in str(item.get("source_url", "")).lower()
         ]
         if not boletins:
-            return None
+            return []
 
-        boletins.sort(key=lambda item: item.get("date", ""), reverse=True)
-        return boletins[0].get("source_url")
+        def score(item: dict) -> tuple[int, str]:
+            url = str(item.get("source_url", "")).lower()
+            # prioriza boletins diarios/hidrologicos, que tendem a conter tabela de rios
+            priority = 0
+            if "boletim_diario" in url:
+                priority += 3
+            if "hidrolog" in url:
+                priority += 2
+            if "boletim" in url:
+                priority += 1
+            return (priority, str(item.get("date", "")))
 
-    def _latest_from_boletins_page(self) -> str | None:
+        boletins.sort(key=score, reverse=True)
+        return [str(item.get("source_url")) for item in boletins[:8] if item.get("source_url")]
+
+    def _latest_from_boletins_page(self) -> list[str]:
         response = requests.get(self.boletins_page_url, timeout=20)
         response.raise_for_status()
 
@@ -92,7 +117,18 @@ class ImasulAdapter(BaseAdapter):
             if ".pdf" in anchor.get("href", "").lower()
         ]
         boletins = [link for link in links if "boletim" in link.lower() or "hidro" in link.lower()]
-        return boletins[0] if boletins else (links[0] if links else None)
+        return boletins[:8] if boletins else links[:4]
+
+    def _extract_levels_from_pdf(self, pdf_bytes: bytes) -> pd.DataFrame:
+        table_df = self._extract_levels_from_tables(pdf_bytes)
+        if not table_df.empty:
+            return table_df
+
+        text = self._extract_text(pdf_bytes)
+        text_df = self._extract_river_levels(text)
+        if not text_df.empty:
+            return text_df
+        return self._coerce_levels_from_text(text)
 
     @staticmethod
     def _extract_text(pdf_bytes: bytes) -> str:
@@ -103,6 +139,39 @@ class ImasulAdapter(BaseAdapter):
 
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             return "\n".join((page.extract_text() or "") for page in pdf.pages)
+
+    @staticmethod
+    def _extract_levels_from_tables(pdf_bytes: bytes) -> pd.DataFrame:
+        try:
+            import pdfplumber
+        except ImportError:
+            return pd.DataFrame()
+
+        rows: list[dict] = []
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                for table in page.extract_tables() or []:
+                    for raw_row in table:
+                        if not raw_row:
+                            continue
+                        values = [str(val).strip() for val in raw_row if val]
+                        if not values:
+                            continue
+
+                        line = " ".join(values)
+                        if not re.search(r"paraguai|parana|paraná", line, flags=re.IGNORECASE):
+                            continue
+
+                        number_match = re.search(r"\b(\d+[\.,]\d+)\b", line)
+                        if not number_match:
+                            continue
+
+                        basin = "Parana" if re.search(r"parana|paraná", line, flags=re.IGNORECASE) else "Paraguai"
+                        river = re.sub(r"\s+", " ", values[0]).strip().title() if values else "Rio"
+                        level = float(number_match.group(1).replace(",", "."))
+                        rows.append({"Rio": river, "Bacia": basin, "Nivel_m": level})
+
+        return pd.DataFrame(rows).drop_duplicates(subset=["Rio", "Bacia"], keep="last") if rows else pd.DataFrame()
 
     @staticmethod
     def _extract_river_levels(text: str) -> pd.DataFrame:
