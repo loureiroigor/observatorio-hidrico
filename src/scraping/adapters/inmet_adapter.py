@@ -34,7 +34,8 @@ class InmetAdapter(BaseAdapter):
             )
 
         options = Options()
-        [options.add_argument(arg) for arg in ("--headless", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1920,1080")]
+        for arg in ("--headless", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1920,1080"):
+            options.add_argument(arg)
 
         try:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)

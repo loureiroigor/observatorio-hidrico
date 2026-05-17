@@ -345,15 +345,6 @@ def montar_painel_risco() -> dict[str, Any]:
     }
 
 
-def calcular_vulnerabilidade(df_chuva: pd.DataFrame) -> pd.DataFrame:
-    df = df_chuva.copy()
-    if "Precipitacao_mm" not in df.columns:
-        df["Precipitacao_mm"] = 0.0
-    df["Risco_Normalizado"] = df["Precipitacao_mm"].map(normalize_precipitation)
-    df["Indice_Risco"] = 1.0 + (9.0 * df["Risco_Normalizado"])
-    return df
-
-
 if __name__ == "__main__":
     painel = montar_painel_risco()
     print(f"Indice de risco atual: {painel['indice_risco']:.2f}")
