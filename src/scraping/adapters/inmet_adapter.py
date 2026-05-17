@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 import time
 
 import pandas as pd
 
-from .base import AdapterResult, BaseAdapter
+from .base import BaseAdapter
 
 
 class InmetAdapter(BaseAdapter):
@@ -53,12 +52,7 @@ class InmetAdapter(BaseAdapter):
             if df.empty:
                 raise ValueError("Tabela carregada sem linhas de chuva")
 
-            return AdapterResult(
-                source=self.source_name,
-                status="ok",
-                updated_at=datetime.now(),
-                payload={"table": df, "last_rain_mm": float(df["Chuva (mm)"].iloc[-1])},
-            )
+            return self.success(payload={"table": df, "last_rain_mm": float(df["Chuva (mm)"].iloc[-1])})
         except Exception as exc:
             # fallback evita parar o calculo quando scraping dinamico falha
             return self.unavailable(str(exc), payload={"table": self._fallback.copy(), "last_rain_mm": 0.0})

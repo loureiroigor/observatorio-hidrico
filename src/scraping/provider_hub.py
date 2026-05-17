@@ -15,4 +15,10 @@ class ProviderHub:
         }
 
     def collect_all(self) -> dict[str, AdapterResult]:
-        return {key: adapter.fetch() for key, adapter in self.adapters.items()}
+        results: dict[str, AdapterResult] = {}
+        for key, adapter in self.adapters.items():
+            try:
+                results[key] = adapter.fetch()
+            except Exception as exc:
+                results[key] = adapter.unavailable(f"falha nao tratada no adapter {key}: {exc}")
+        return results

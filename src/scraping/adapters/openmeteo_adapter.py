@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 
-from .base import AdapterResult, BaseAdapter
+from .base import BaseAdapter
 
 
 class OpenMeteoAdapter(BaseAdapter):
@@ -39,15 +39,12 @@ class OpenMeteoAdapter(BaseAdapter):
                 dt = pd.to_datetime(df_hourly["Data_Hora"], errors="coerce")
                 df_hourly = df_hourly.assign(Data=dt.dt.strftime("%d/%m/%Y"), Hora=dt.dt.strftime("%H:%M"))[["Data", "Hora", "Chuva_Digital (mm)"]].tail(8)
 
-            return AdapterResult(
-                source=self.source_name,
-                status="ok",
-                updated_at=datetime.now(),
+            return self.success(
                 payload={
                     "daily": df_daily,
                     "hourly": df_hourly,
                     "last_precipitation_mm": float(df_daily["Precipitacao_mm"].iloc[-1]) if not df_daily.empty else 0.0,
-                },
+                }
             )
         except Exception as exc:
             # fallback garante serie minima pra motor de risco nao estourar

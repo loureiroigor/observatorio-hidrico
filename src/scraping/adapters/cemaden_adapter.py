@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 
-from .base import AdapterResult, BaseAdapter
+from .base import BaseAdapter
 
 
 class CemadenAdapter(BaseAdapter):
@@ -39,15 +39,12 @@ class CemadenAdapter(BaseAdapter):
                 ]
             )
 
-            return AdapterResult(
-                source=self.source_name,
-                status="ok",
-                updated_at=datetime.now(),
+            return self.success(
                 payload={
                     "table": table,
                     "mean_soil_moisture": float(table["UmidadeSolo_pct"].mean()),
                     "source_url": self.product_meta_url,
-                },
+                }
             )
         except Exception as exc:
             fallback = pd.DataFrame([{"Estacao": "MS-CG", "UmidadeSolo_pct": 37.0}])

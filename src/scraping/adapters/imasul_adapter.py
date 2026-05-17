@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from io import BytesIO
 import re
 from urllib.parse import urljoin
@@ -9,7 +8,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-from .base import AdapterResult, BaseAdapter
+from .base import BaseAdapter
 
 
 class ImasulAdapter(BaseAdapter):
@@ -49,15 +48,12 @@ class ImasulAdapter(BaseAdapter):
                 levels_df["Bacia"].isin(["Paraguai", "Parana"]) | levels_df["Bacia"].str.contains("MS")
             ]
             selected = selected if not selected.empty else levels_df
-            return AdapterResult(
-                source=self.source_name,
-                status="ok",
-                updated_at=datetime.now(),
+            return self.success(
                 payload={
                     "table": selected.sort_values("Rio").reset_index(drop=True),
                     "mean_level_m": float(selected["Nivel_m"].mean()),
                     "source_url": source_pdf,
-                },
+                }
             )
         except Exception as exc:
             # fallback mantem o painel ativo quando boletim some ou muda formato

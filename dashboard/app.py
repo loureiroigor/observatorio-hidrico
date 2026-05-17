@@ -141,6 +141,197 @@ def _label_with_tip(text: str, target_id: str) -> html.Span:
     )
 
 
+def _montar_linha_metricas_secundarias(confidence_score: float, trend_label: str, trend_color: str, trend_slope: float) -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.P(_label_with_tip("Confidence Score", "tip-confidence"), className="metric-label"),
+                            html.H2(f"{confidence_score:.1f}/100", className="metric-value"),
+                            html.P("Disponibilidade e recencia das fontes em tempo real.", className="metric-footnote"),
+                        ]
+                    ),
+                    className="glass-card h-100",
+                ),
+                md=6,
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.P(_label_with_tip("Tendencia do Risco", "tip-trend"), className="metric-label"),
+                            html.H2(trend_label, className="metric-value", style={"color": trend_color}),
+                            html.P(f"Inclinacao: {trend_slope:+.3f} ponto/dia", className="metric-footnote"),
+                        ]
+                    ),
+                    className="glass-card h-100",
+                ),
+                md=6,
+            ),
+        ],
+        className="g-4 mb-4",
+    )
+
+
+def _montar_linha_status_provedores(active_providers: list[str], fallback_providers: list[str]) -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Status dos Provedores", "tip-provedores"), className="section-title"),
+                            html.P(
+                                f"Ativos agora: {', '.join(active_providers) if active_providers else 'nenhum'}",
+                                className="section-description",
+                            ),
+                            html.P(
+                                f"Em fallback: {', '.join(fallback_providers) if fallback_providers else 'nenhum'}",
+                                className="metric-footnote",
+                            ),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=12,
+            )
+        ],
+        className="mb-4",
+    )
+
+
+def _montar_linha_diagnostico(df_diagnostico: pd.DataFrame) -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Diagnostico de Convergencia", "tip-diagnostico"), className="section-title"),
+                            html.P(
+                                "O risco final considera 40% nivel de rios (IMASUL), 40% umidade do solo (CEMADEN) e 20% precipitacao."
+                                " Em periodos de chuva consecutiva, o motor aplica decaimento exponencial e aproxima o indicador da classe ANA.",
+                                className="section-description",
+                            ),
+                            dbc.Table.from_dataframe(df_diagnostico, striped=True, bordered=False, hover=True, size="sm"),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=12,
+            )
+        ],
+        className="mb-4",
+    )
+
+
+def _montar_linha_graficos(df_precip: pd.DataFrame, df_hist: pd.DataFrame) -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Risco x Precipitacao", "tip-risco-chuva"), className="section-title"),
+                            dcc.Graph(figure=_build_main_figure(df_precip, df_hist)),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=8,
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Recuperacao Semanal", "tip-recuperacao"), className="section-title"),
+                            dcc.Graph(figure=_build_weekly_figure(df_hist)),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=4,
+            ),
+        ],
+        className="g-4 mb-4",
+    )
+
+
+def _montar_linha_tabelas_auditoria(df_imasul: pd.DataFrame, df_inmet: pd.DataFrame, df_openmeteo: pd.DataFrame) -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([html.H4("Auditoria IMASUL", className="section-title"), dbc.Table.from_dataframe(df_imasul, striped=True, bordered=False, hover=True, size="sm")]),
+                    className="panel-card",
+                ),
+                md=4,
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([html.H4("Auditoria INMET", className="section-title"), dbc.Table.from_dataframe(df_inmet, striped=True, bordered=False, hover=True, size="sm")]),
+                    className="panel-card",
+                ),
+                md=4,
+            ),
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([html.H4("Open-Meteo Horario", className="section-title"), dbc.Table.from_dataframe(df_openmeteo, striped=True, bordered=False, hover=True, size="sm")]),
+                    className="panel-card",
+                ),
+                md=4,
+            ),
+        ],
+        className="g-4 mb-5",
+    )
+
+
+def _montar_linha_fontes() -> dbc.Row:
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Fontes e Dados Utilizados", "tip-fontes-dados"), className="section-title"),
+                            html.Ul(
+                                [
+                                    html.Li("IMASUL: Boletim em pdf com nivel dos rios para bacias do paraguai/parana em ms."),
+                                    html.Li("CEMADEN: Umidade do solo por estacao via csv/api, usada como sinal de estresse hidrico."),
+                                    html.Li("ANA: Classe oficial do monitor de secas (s0 a s4), usada como ancora de contexto regional."),
+                                    html.Li("INMET: Chuva observada da estacao a702 via raspagem da tabela oficial."),
+                                    html.Li("OPEN-METEO: Chuva diaria e horaria por api para complementar recencia e continuidade da serie."),
+                                ],
+                                className="section-description",
+                            ),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=12,
+            )
+        ],
+        className="mb-4",
+    )
+
+
+def _montar_tooltips() -> list[dbc.Tooltip]:
+    return [
+        dbc.Tooltip("mede confiabilidade do dado pela disponibilidade dos adapters e recencia das leituras.", target="tip-confidence", placement="top"),
+        dbc.Tooltip("mostra inclinacao semanal do indice: agravando, estavel ou recuperando.", target="tip-trend", placement="top"),
+        dbc.Tooltip("abre o peso e a contribuicao de cada fonte para explicar por que o risco final ficou nesse valor.", target="tip-diagnostico", placement="top"),
+        dbc.Tooltip("compara a serie de risco ajustado com chuva diaria para evitar leitura isolada de evento curto.", target="tip-risco-chuva", placement="top"),
+        dbc.Tooltip("mostra como o risco responde ao fator de recuperacao com memoria hidrologica.", target="tip-recuperacao", placement="top"),
+        dbc.Tooltip("indice final na escala 1 a 10 apos consenso, ancora ana e recuperacao hidrologica.", target="tip-indice", placement="top"),
+        dbc.Tooltip("quantas fontes estao ativas agora e contribuindo no consenso.", target="tip-fontes", placement="top"),
+        dbc.Tooltip("resumo dos ultimos dias para evitar decisao por chuva isolada.", target="tip-historico", placement="top"),
+        dbc.Tooltip("mostra exatamente quais fontes estao ativas e quais entraram em fallback seguro.", target="tip-provedores", placement="top"),
+        dbc.Tooltip("documenta de onde cada dado do painel e extraido para auditoria academica.", target="tip-fontes-dados", placement="top"),
+    ]
+
+
 painel = montar_painel_risco()
 df_precip, df_hist, df_imasul, df_inmet, df_openmeteo = _prepare_data(painel)
 df_diagnostico = painel["diagnostico_df"]
@@ -189,136 +380,13 @@ app.layout = dbc.Container(
             ],
             className="g-4 mb-4",
         ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.P(_label_with_tip("Confidence Score", "tip-confidence"), className="metric-label"),
-                                html.H2(f"{confidence_score:.1f}/100", className="metric-value"),
-                                # expor confianca evita leitura binaria de risco alto/baixo
-                                html.P("Disponibilidade e recencia das fontes em tempo real.", className="metric-footnote"),
-                            ]
-                        ),
-                        className="glass-card h-100",
-                    ),
-                    md=6,
-                ),
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.P(_label_with_tip("Tendencia do Risco", "tip-trend"), className="metric-label"),
-                                html.H2(trend_label, className="metric-value", style={"color": trend_color}),
-                                html.P(f"Inclinacao: {trend_slope:+.3f} ponto/dia", className="metric-footnote"),
-                            ]
-                        ),
-                        className="glass-card h-100",
-                    ),
-                    md=6,
-                ),
-            ],
-            className="g-4 mb-4",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.H4(_label_with_tip("Status dos Provedores", "tip-provedores"), className="section-title"),
-                                html.P(
-                                    f"Ativos agora: {', '.join(active_providers) if active_providers else 'nenhum'}",
-                                    className="section-description",
-                                ),
-                                html.P(
-                                    f"Em fallback: {', '.join(fallback_providers) if fallback_providers else 'nenhum'}",
-                                    className="metric-footnote",
-                                ),
-                            ]
-                        ),
-                        className="panel-card",
-                    ),
-                    md=12,
-                )
-            ],
-            className="mb-4",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.H4(_label_with_tip("Diagnostico de Convergencia", "tip-diagnostico"), className="section-title"),
-                                # explica o porquê do indice pra reduzir amnesia da seca
-                                html.P(
-                                    "O risco final considera 40% nivel de rios (IMASUL), 40% umidade do solo (CEMADEN) e 20% precipitacao."
-                                    " Em periodos de chuva consecutiva, o motor aplica decaimento exponencial e aproxima o indicador da classe ANA.",
-                                    className="section-description",
-                                ),
-                                dbc.Table.from_dataframe(df_diagnostico, striped=True, bordered=False, hover=True, size="sm"),
-                            ]
-                        ),
-                        className="panel-card",
-                    ),
-                    md=12,
-                )
-            ],
-            className="mb-4",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4(_label_with_tip("Risco x Precipitacao", "tip-risco-chuva"), className="section-title"), dcc.Graph(figure=_build_main_figure(df_precip, df_hist))]), className="panel-card"), md=8),
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4(_label_with_tip("Recuperacao Semanal", "tip-recuperacao"), className="section-title"), dcc.Graph(figure=_build_weekly_figure(df_hist))]), className="panel-card"), md=4),
-            ],
-            className="g-4 mb-4",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4("Auditoria IMASUL", className="section-title"), dbc.Table.from_dataframe(df_imasul, striped=True, bordered=False, hover=True, size="sm")]), className="panel-card"), md=4),
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4("Auditoria INMET", className="section-title"), dbc.Table.from_dataframe(df_inmet, striped=True, bordered=False, hover=True, size="sm")]), className="panel-card"), md=4),
-                dbc.Col(dbc.Card(dbc.CardBody([html.H4("Open-Meteo Horario", className="section-title"), dbc.Table.from_dataframe(df_openmeteo, striped=True, bordered=False, hover=True, size="sm")]), className="panel-card"), md=4),
-            ],
-            className="g-4 mb-5",
-        ),
-        dbc.Row(
-            [
-                dbc.Col(
-                    dbc.Card(
-                        dbc.CardBody(
-                            [
-                                html.H4(_label_with_tip("Fontes e Dados Utilizados", "tip-fontes-dados"), className="section-title"),
-                                html.Ul(
-                                    [
-                                        html.Li("IMASUL: Boletim em pdf com nivel dos rios para bacias do paraguai/parana em ms."),
-                                        html.Li("CEMADEN: Umidade do solo por estacao via csv/api, usada como sinal de estresse hidrico."),
-                                        html.Li("ANA: Classe oficial do monitor de secas (s0 a s4), usada como ancora de contexto regional."),
-                                        html.Li("INMET: Chuva observada da estacao a702 via raspagem da tabela oficial."),
-                                        html.Li("OPEN-METEO: Chuva diaria e horaria por api para complementar recencia e continuidade da serie."),
-                                    ],
-                                    className="section-description",
-                                ),
-                            ]
-                        ),
-                        className="panel-card",
-                    ),
-                    md=12,
-                )
-            ],
-            className="mb-4",
-        ),
-        dbc.Tooltip("mede confiabilidade do dado pela disponibilidade dos adapters e recencia das leituras.", target="tip-confidence", placement="top"),
-        dbc.Tooltip("mostra inclinacao semanal do indice: agravando, estavel ou recuperando.", target="tip-trend", placement="top"),
-        dbc.Tooltip("abre o peso e a contribuicao de cada fonte para explicar por que o risco final ficou nesse valor.", target="tip-diagnostico", placement="top"),
-        dbc.Tooltip("compara a serie de risco ajustado com chuva diaria para evitar leitura isolada de evento curto.", target="tip-risco-chuva", placement="top"),
-        dbc.Tooltip("mostra como o risco responde ao fator de recuperacao com memoria hidrologica.", target="tip-recuperacao", placement="top"),
-        dbc.Tooltip("indice final na escala 1 a 10 apos consenso, ancora ana e recuperacao hidrologica.", target="tip-indice", placement="top"),
-        dbc.Tooltip("quantas fontes estao ativas agora e contribuindo no consenso.", target="tip-fontes", placement="top"),
-        dbc.Tooltip("resumo dos ultimos dias para evitar decisao por chuva isolada.", target="tip-historico", placement="top"),
-        dbc.Tooltip("mostra exatamente quais fontes estao ativas e quais entraram em fallback seguro.", target="tip-provedores", placement="top"),
-        dbc.Tooltip("documenta de onde cada dado do painel e extraido para auditoria academica.", target="tip-fontes-dados", placement="top"),
+        _montar_linha_metricas_secundarias(confidence_score, trend_label, trend_color, trend_slope),
+        _montar_linha_status_provedores(active_providers, fallback_providers),
+        _montar_linha_diagnostico(df_diagnostico),
+        _montar_linha_graficos(df_precip, df_hist),
+        _montar_linha_tabelas_auditoria(df_imasul, df_inmet, df_openmeteo),
+        _montar_linha_fontes(),
+        *_montar_tooltips(),
     ],
     fluid=True,
     className="dashboard-root",

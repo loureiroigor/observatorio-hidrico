@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 import re
 
 import requests
 
-from .base import AdapterResult, BaseAdapter
+from .base import BaseAdapter
 
 
 class AnaSecaAdapter(BaseAdapter):
@@ -23,15 +22,12 @@ class AnaSecaAdapter(BaseAdapter):
             if not classification:
                 raise ValueError("Nao foi possivel identificar classificacao ANA para MS")
 
-            return AdapterResult(
-                source=self.source_name,
-                status="ok",
-                updated_at=datetime.now(),
+            return self.success(
                 payload={
                     "classification": classification,
                     "region": "Mato Grosso do Sul",
                     "source_url": self.monitor_url,
-                },
+                }
             )
         except Exception as exc:
             return self.unavailable(
