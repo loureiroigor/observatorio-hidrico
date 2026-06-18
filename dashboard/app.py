@@ -202,6 +202,37 @@ def _montar_linha_status_provedores(active_providers: list[str], fallback_provid
     )
 
 
+def _montar_linha_veredito(veredito: dict) -> dbc.Row:
+    status = str(veredito.get("status", "Indefinido"))
+    risco = str(veredito.get("risco", "Indefinido"))
+    color = "#2a9d8f" if status == "Validado" else "#f48c06" if status == "Valido com ressalvas" else "#e63946"
+    evidencias = list(veredito.get("evidencias", [])) or ["Sem evidencias automaticas suficientes."]
+    ressalvas = list(veredito.get("ressalvas", [])) or ["Nenhuma ressalva automatica encontrada."]
+
+    return dbc.Row(
+        [
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody(
+                        [
+                            html.H4(_label_with_tip("Veredito dos Dados", "tip-veredito"), className="section-title"),
+                            html.H2(f"{status} | Risco {risco}", className="metric-value", style={"color": color}),
+                            html.P(str(veredito.get("mensagem", "")), className="section-description"),
+                            html.H6("Evidencias", className="metric-label"),
+                            html.Ul([html.Li(item) for item in evidencias], className="section-description"),
+                            html.H6("Ressalvas", className="metric-label"),
+                            html.Ul([html.Li(item) for item in ressalvas], className="section-description"),
+                        ]
+                    ),
+                    className="panel-card",
+                ),
+                md=12,
+            )
+        ],
+        className="mb-4",
+    )
+
+
 def _montar_linha_diagnostico(df_diagnostico: pd.DataFrame) -> dbc.Row:
     return dbc.Row(
         [
@@ -328,6 +359,7 @@ def _montar_tooltips() -> list[dbc.Tooltip]:
         dbc.Tooltip("quantas fontes estao ativas agora e contribuindo no consenso.", target="tip-fontes", placement="top"),
         dbc.Tooltip("resumo dos ultimos dias para evitar decisao por chuva isolada.", target="tip-historico", placement="top"),
         dbc.Tooltip("mostra exatamente quais fontes estao ativas e quais entraram em fallback seguro.", target="tip-provedores", placement="top"),
+        dbc.Tooltip("resume se as fontes estao disponiveis, coerentes entre si e suficientes para sustentar o indice.", target="tip-veredito", placement="top"),
         dbc.Tooltip("documenta de onde cada dado do painel e extraido para auditoria academica.", target="tip-fontes-dados", placement="top"),
     ]
 
@@ -382,6 +414,7 @@ app.layout = dbc.Container(
         ),
         _montar_linha_metricas_secundarias(confidence_score, trend_label, trend_color, trend_slope),
         _montar_linha_status_provedores(active_providers, fallback_providers),
+        _montar_linha_veredito(painel.get("veredito_dados", {})),
         _montar_linha_diagnostico(df_diagnostico),
         _montar_linha_graficos(df_precip, df_hist),
         _montar_linha_tabelas_auditoria(df_imasul, df_inmet, df_openmeteo),

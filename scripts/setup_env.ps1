@@ -8,6 +8,13 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $venvPath = Join-Path $projectRoot ".venv"
 $pythonExe = Join-Path $venvPath "Scripts\python.exe"
+$pythonCommand = Get-Command py -ErrorAction SilentlyContinue
+if (-not $pythonCommand) {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+}
+if (-not $pythonCommand) {
+    throw "Python nao encontrado. Instale o Python e marque a opcao 'Add python.exe to PATH'."
+}
 
 Write-Host "[setup] projeto: $projectRoot"
 
@@ -18,7 +25,7 @@ if ($ForceRecreate -and (Test-Path $venvPath)) {
 
 if (-not (Test-Path $pythonExe)) {
     Write-Host "[setup] criando ambiente virtual"
-    py -m venv $venvPath
+    & $pythonCommand.Source -m venv $venvPath
 }
 
 Write-Host "[setup] atualizando pip/setuptools/wheel"

@@ -69,6 +69,10 @@ def normalize_precipitation(precip_mm: float, wet_ref: float = 25.0) -> float:
     return _clip(1.0 - (_safe_float(precip_mm) / wet_ref))
 
 
+def normalize_recent_precipitation(precip_series: pd.Series) -> float:
+    return _clip(1.0 - _rain_recovery_pressure(precip_series))
+
+
 def ana_class_to_risk(classification: str) -> float:
     return ANA_RISK_MAP.get(str(classification).strip().upper(), ANA_RISK_MAP["S1"])
 
@@ -256,19 +260,83 @@ def validar_modelo_vs_ana(
     }
 
 
-def _build_signals(collected: dict[str, Any], river_level: float, soil_moisture: float, last_precip: float) -> list[ConsensusSignal]:
+def _build_signals(
+    collected: dict[str, Any],
+    river_level: float,
+    soil_moisture: float,
+    recent_precip_mm: float,
+    precipitation_risk: float,
+) -> list[ConsensusSignal]:
     return [
         ConsensusSignal("Nivel dos rios (IMASUL)", 0.40, normalize_river_level(river_level), collected["imasul"].status, river_level, "m"),
         ConsensusSignal("Umidade do solo (CEMADEN)", 0.40, normalize_soil_moisture(soil_moisture), collected["cemaden"].status, soil_moisture, "%"),
         ConsensusSignal(
-            "Precipitacao diaria (INMET/Open-Meteo)",
+            "Precipitacao recente (INMET/Open-Meteo)",
             0.20,
-            normalize_precipitation(last_precip),
+            precipitation_risk,
             "ok" if {collected["open_meteo"].status, collected["inmet"].status} & {"ok"} else "unavailable",
-            last_precip,
+            recent_precip_mm,
             "mm",
         ),
     ]
+
+
+def _last_table_rain_mm(frame: pd.DataFrame, column: str) -> float | None:
+    if not isinstance(frame, pd.DataFrame) or frame.empty or column not in frame.columns:
+        return None
+    values = pd.to_numeric(frame[column], errors="coerce").dropna()
+    return float(values.iloc[-1]) if not values.empty else None
+
+
+def _build_data_verdict(
+    collected: dict[str, Any],
+    confidence_score: float,
+    risk_index: float,
+    ana_class: str,
+    signals: list[ConsensusSignal],
+) -> dict[str, Any]:
+    active = [name for name, result in collected.items() if result.status == "ok"]
+    warnings: list[str] = []
+    evidence: list[str] = []
+
+    if len(active) < len(collected):
+        missing = [name.upper() for name, result in collected.items() if result.status != "ok"]
+        warnings.append(f"Fontes em fallback: {', '.join(missing)}.")
+
+    inmet_rain = _last_table_rain_mm(collected["inmet"].payload.get("table", pd.DataFrame()), "Chuva (mm)")
+    openmeteo_rain = _last_table_rain_mm(collected["open_meteo"].payload.get("hourly", pd.DataFrame()), "Chuva_Digital (mm)")
+    if inmet_rain is not None and openmeteo_rain is not None:
+        diff = abs(inmet_rain - openmeteo_rain)
+        if diff <= 2.0:
+            evidence.append(f"INMET e Open-Meteo concordam na chuva recente ({inmet_rain:.1f} mm vs {openmeteo_rain:.1f} mm).")
+        else:
+            warnings.append(f"Divergencia de chuva recente entre INMET ({inmet_rain:.1f} mm) e Open-Meteo ({openmeteo_rain:.1f} mm).")
+
+    high_signals = [signal.name for signal in signals if signal.normalized_risk >= 0.75]
+    if high_signals:
+        evidence.append(f"Sinais criticos convergentes: {', '.join(high_signals)}.")
+
+    if ana_class.upper() in {"S3", "S4"}:
+        evidence.append(f"ANA indica seca severa/regional ({ana_class.upper()}).")
+
+    if confidence_score >= 90 and not warnings:
+        status = "Validado"
+        message = "Dados consistentes para uso analitico neste painel."
+    elif confidence_score >= 75:
+        status = "Valido com ressalvas"
+        message = "Dados utilizaveis, mas exigem leitura das ressalvas antes de conclusao externa."
+    else:
+        status = "Baixa confianca"
+        message = "Dados insuficientes para um veredito robusto sem verificacao manual."
+
+    risk_verdict = "Critico" if risk_index >= 8.2 else "Alto" if risk_index >= 6.4 else "Moderado" if risk_index >= 4.6 else "Baixo"
+    return {
+        "status": status,
+        "risco": risk_verdict,
+        "mensagem": message,
+        "evidencias": evidence,
+        "ressalvas": warnings or ["Nenhuma ressalva automatica encontrada."],
+    }
 
 
 def montar_painel_risco() -> dict[str, Any]:
@@ -280,11 +348,13 @@ def montar_painel_risco() -> dict[str, Any]:
 
     precip_series = _series_to_float(daily_precip["Precipitacao_mm"])
     last_precip = _safe_float(precip_series.iloc[-1]) if not precip_series.empty else 0.0
+    recent_precip_mm = float(precip_series.tail(7).sum()) if not precip_series.empty else 0.0
+    precipitation_risk = normalize_recent_precipitation(precip_series)
     river_level = _safe_float(collected["imasul"].payload.get("mean_level_m", 2.2), 2.2)
     soil_moisture = _safe_float(collected["cemaden"].payload.get("mean_soil_moisture", 37.0), 37.0)
     ana_class = str(collected["ana"].payload.get("classification", "S1"))
 
-    signals = _build_signals(collected, river_level, soil_moisture, last_precip)
+    signals = _build_signals(collected, river_level, soil_moisture, recent_precip_mm, precipitation_risk)
     river_risk_norm, soil_risk_norm = signals[0].normalized_risk, signals[1].normalized_risk
 
     # calculo final do indice (passo a passo):
@@ -305,6 +375,7 @@ def montar_painel_risco() -> dict[str, Any]:
     weekly = _weekly_history(daily_precip, base_consensus, ana_anchor, river_risk_norm, soil_risk_norm)
     trend_info = detect_trend(weekly)
     confidence_score, confidence_meta = calculate_confidence_score(collected)
+    data_verdict = _build_data_verdict(collected, confidence_score, risk_index, ana_class, signals)
 
     diagnostics = pd.DataFrame(
         [
@@ -342,6 +413,7 @@ def montar_painel_risco() -> dict[str, Any]:
         "confidence_meta": confidence_meta,
         "trend": trend_info,
         "resumo_semanal": resumo_semanal,
+        "veredito_dados": data_verdict,
     }
 
 

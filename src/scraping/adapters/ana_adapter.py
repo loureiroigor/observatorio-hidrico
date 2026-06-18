@@ -10,7 +10,6 @@ from .base import BaseAdapter
 class AnaSecaAdapter(BaseAdapter):
     source_name = "ana"
     monitor_url = "https://monitordesecas.ana.gov.br/"
-    monitor_bundle_url = "https://monitordesecas.ana.gov.br/main-es2015.b6d0cdcd81879044913a.js"
     seca_proxy_meta_url = "https://mapasecas.cemaden.gov.br/rest/product/meta/secadiagnostico"
 
     def fetch(self) -> AdapterResult:
@@ -18,7 +17,7 @@ class AnaSecaAdapter(BaseAdapter):
             monitor_html = requests.get(self.monitor_url, timeout=20)
             monitor_html.raise_for_status()
 
-            classification = self._extract_class_from_monitor_bundle() or self._extract_class_from_public_proxy()
+            classification = self._extract_class_from_monitor_bundle(monitor_html.text) or self._extract_class_from_public_proxy()
             if not classification:
                 raise ValueError("Nao foi possivel identificar classificacao ANA para MS")
 
@@ -35,11 +34,29 @@ class AnaSecaAdapter(BaseAdapter):
                 payload={"classification": "S1", "region": "Mato Grosso do Sul", "source_url": self.monitor_url},
             )
 
-    def _extract_class_from_monitor_bundle(self) -> str | None:
-        response = requests.get(self.monitor_bundle_url, timeout=30)
-        response.raise_for_status()
-        text = response.text
+    def _extract_class_from_monitor_bundle(self, html: str) -> str | None:
+        for bundle_url in self._extract_bundle_urls(html):
+            try:
+                response = requests.get(bundle_url, timeout=30)
+                response.raise_for_status()
+            except requests.RequestException:
+                continue
 
+            classification = self._extract_class_from_text(response.text)
+            if classification:
+                return classification
+        return None
+
+    def _extract_bundle_urls(self, html: str) -> list[str]:
+        urls: list[str] = []
+        for src in re.findall(r'<script[^>]+src=["\']([^"\']+\.js)["\']', html, flags=re.IGNORECASE):
+            if src.startswith("http"):
+                urls.append(src)
+            else:
+                urls.append(f"{self.monitor_url.rstrip('/')}/{src.lstrip('/')}")
+        return urls
+
+    def _extract_class_from_text(self, text: str) -> str | None:
         patterns = [
             r'"uf":"MS".{0,160}"classe":"(S[0-4])"',
             r'"sigla":"MS".{0,220}"seca":"(S[0-4])"',
@@ -54,7 +71,9 @@ class AnaSecaAdapter(BaseAdapter):
 
     def _extract_class_from_public_proxy(self) -> str | None:
         # usa camada publica de diagnostico de seca enquanto o monitor ANA nao expõe endpoint simples
-        meta = requests.get(self.seca_proxy_meta_url, timeout=20).json()
+        meta_response = requests.get(self.seca_proxy_meta_url, timeout=20)
+        meta_response.raise_for_status()
+        meta = meta_response.json()
         timesteps = meta.get("timesteps", {}) if isinstance(meta, dict) else {}
         if not timesteps:
             return None
